@@ -8,7 +8,7 @@
 PRODUCT_NAME = ap1
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.ap1
+PRODUCT_BUNDLE_IDENTIFIER = com.billingapp.ap1
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2025 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2025 com.billingapp. All rights reserved.
