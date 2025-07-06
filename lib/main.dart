@@ -38,14 +38,51 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  double _progress = 0.0;
+  String _statusText = 'Initializing...';
+  Timer? _progressTimer;
+
   @override
   void initState() {
     super.initState();
-    // Navigate immediately to avoid unnecessary delay
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const WebViewApp()),
-      );
+    _startProgressAnimation();
+  }
+
+  @override
+  void dispose() {
+    _progressTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startProgressAnimation() {
+    _progressTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (mounted) {
+        setState(() {
+          _progress += 0.08; // Faster increment (4x faster)
+
+          if (_progress <= 0.3) {
+            _statusText = 'Starting...';
+          } else if (_progress <= 0.6) {
+            _statusText = 'Loading resources...';
+          } else if (_progress <= 0.7) {
+            _statusText = 'Almost ready...';
+          } else {
+            _statusText = 'Ready!';
+          }
+
+          // When progress reaches 70%, navigate to WebView immediately
+          if (_progress >= 0.7) {
+            _progress = 0.7; // Stop at 70%
+            timer.cancel();
+            // Navigate immediately without delay for fast loading feeling
+            if (mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (context) => const WebViewApp()),
+              );
+            }
+          }
+        });
+      }
     });
   }
 
@@ -77,13 +114,42 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
             ),
             const SizedBox(height: 32),
-            // More subtle loading indicator
-            const SizedBox(
-              width: 30,
-              height: 30,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+            // Horizontal progress bar instead of circular loader
+            Container(
+              width: 200,
+              height: 6,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Stack(
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    width:
+                        200 *
+                        _progress, // This will show 70% of 200px = 140px when _progress = 0.7
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _statusText,
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${(_progress * 100).toStringAsFixed(0)}%',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.blue,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -113,7 +179,7 @@ class _WebViewAppState extends State<WebViewApp> {
       supportZoom: false,
       cacheEnabled: true,
       clearCache: false,
-      transparentBackground: true, // Prevents black screen
+      transparentBackground: true,
     ),
     android: AndroidInAppWebViewOptions(
       useHybridComposition: true,
@@ -134,35 +200,11 @@ class _WebViewAppState extends State<WebViewApp> {
   );
 
   final String url = "https://www.billingselling.com";
-  bool isLoading = true;
-  bool isWebViewReady = false;
-  double progress = 0;
-  String? initialUrl;
 
   @override
   void initState() {
     super.initState();
-    _initializeResources();
-  }
-
-  Future<void> _initializeResources() async {
-    try {
-      // Get the last visited URL to potentially start from there
-      final lastUrl = await getLastVisitedUrl();
-      if (mounted) {
-        setState(() {
-          initialUrl = lastUrl ?? url;
-        });
-      }
-    } catch (e) {
-      // Handle any potential errors
-      print("Error initializing resources: $e");
-      if (mounted) {
-        setState(() {
-          initialUrl = url;
-        });
-      }
-    }
+    // Initialize webViewController as null
   }
 
   Future<bool> _onWillPop() async {
@@ -209,128 +251,43 @@ class _WebViewAppState extends State<WebViewApp> {
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
-        backgroundColor: Colors.white, // Prevent black background
+        backgroundColor: Colors.white,
         body: SafeArea(
-          child: Stack(
-            children: [
-              // Show loading screen until we have initial URL
-              if (initialUrl == null)
-                Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        'assets/app_logo.png',
-                        width: 100,
-                        height: 100,
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Loading...',
-                        style: TextStyle(fontSize: 16, color: Colors.blue),
-                      ),
-                      const SizedBox(height: 16),
-                      const CircularProgressIndicator(),
-                    ],
-                  ),
-                )
-              else
-                InAppWebView(
-                  key: webViewKey,
-                  initialUrlRequest: URLRequest(url: WebUri(initialUrl!)),
-                  initialOptions: options,
-                  onWebViewCreated: (controller) {
-                    webViewController = controller;
-                    setState(() {
-                      isWebViewReady = true;
-                    });
-                  },
-                  onLoadStart: (controller, url) {
-                    setState(() {
-                      isLoading = true;
-                    });
-                    if (url != null) {
-                      saveLastVisitedUrl(url.toString());
-                    }
-                  },
-                  onLoadStop: (controller, url) {
-                    setState(() {
-                      isLoading = false;
-                    });
-                  },
-                  onProgressChanged: (controller, progress) {
-                    setState(() {
-                      this.progress = progress / 100;
-                    });
-                  },
-                  onUpdateVisitedHistory: (controller, url, androidIsReload) {
-                    if (url != null) {
-                      saveLastVisitedUrl(url.toString());
-                    }
-                  },
-                  shouldOverrideUrlLoading:
-                      (controller, navigationAction) async {
-                        var uri = navigationAction.request.url;
-                        if (uri != null) {
-                          return NavigationActionPolicy.ALLOW;
-                        }
-                        return NavigationActionPolicy.CANCEL;
-                      },
-                  onConsoleMessage: (controller, consoleMessage) {
-                    print("Console Message: ${consoleMessage.message}");
-                  },
-                  onReceivedServerTrustAuthRequest:
-                      (controller, challenge) async {
-                        return ServerTrustAuthResponse(
-                          action: ServerTrustAuthResponseAction.PROCEED,
-                        );
-                      },
-                ),
-              // Show progress indicator only during web page loading
-              if (isLoading && isWebViewReady && initialUrl != null)
-                Container(
-                  color: Colors.white.withOpacity(0.8),
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(
-                          value: progress,
-                          strokeWidth: 3,
-                          backgroundColor: Colors.grey[300],
-                          valueColor: const AlwaysStoppedAnimation<Color>(
-                            Colors.blue,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          "${(progress * 100).toStringAsFixed(0)}%",
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.blue,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Loading page...',
-                          style: TextStyle(fontSize: 14, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
+          child: InAppWebView(
+            key: webViewKey,
+            initialUrlRequest: URLRequest(url: WebUri(url)),
+            initialOptions: options,
+            onWebViewCreated: (controller) {
+              // Use existing controller if available, otherwise use the new one
+              webViewController = webViewController ?? controller;
+            },
+            onLoadStart: (controller, url) {
+              if (url != null) {
+                saveLastVisitedUrl(url.toString());
+              }
+            },
+            onUpdateVisitedHistory: (controller, url, androidIsReload) {
+              if (url != null) {
+                saveLastVisitedUrl(url.toString());
+              }
+            },
+            shouldOverrideUrlLoading: (controller, navigationAction) async {
+              var uri = navigationAction.request.url;
+              if (uri != null) {
+                return NavigationActionPolicy.ALLOW;
+              }
+              return NavigationActionPolicy.CANCEL;
+            },
+            onConsoleMessage: (controller, consoleMessage) {
+              print("Console Message: ${consoleMessage.message}");
+            },
+            onReceivedServerTrustAuthRequest: (controller, challenge) async {
+              return ServerTrustAuthResponse(
+                action: ServerTrustAuthResponseAction.PROCEED,
+              );
+            },
           ),
-        ), // Refresh button commented out as requested
-        // floatingActionButton: !isLoading
-        //     ? FloatingActionButton(
-        //         child: const Icon(Icons.refresh),
-        //         onPressed: () {
-        //           webViewController?.reload();
-        //         },
-        //       )
-        //     : null,
+        ),
       ),
     );
   }
